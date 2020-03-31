@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "An example template with an IAM role for a sample state machine : base."
+Resources:
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:DescribeStateMachine"
+                  - "states:StartExecution"
+                  - "states:DeleteStateMachine"
+                  - "states:ListExecutions"
+                  - "states:UpdateStateMachine"
+                  - "glue:StartJobRun"
+                  - "events:PutTargets"
+                  - "events:PutRule"
+                  - "events:DescribeRule"
+                Resource: "*"
+  StateMachine1:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Example to invoke AWS Glue Job",
+              "StartAt": "Preprocessing",
+              "States": {
+                "Preprocessing": {
+                  "Comment": "Write prep if you need",
+                  "Type": "Pass",
+                  "Next": "Execute2GlueJobs"
+                },
+                "Execute2GlueJobs": {
+                  "Type": "Parallel",
+                  "Next": "Finished",
+                  "Branches": [
+                    {
+                      "StartAt": "job1",
+                      "States": {
+                        "job1": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${StateMachine2}"
+                            },
+                          "End": true
+                        }
+                      }
+                    },
+                    {
+                      "StartAt": "job2",
+                      "States": {
+                        "job2": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${StateMachine3}"
+                            },
+                          "End": true
+                        }
+                      }
+                    }
+                  ],
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "NotifyFailure",
+                      "ResultPath": "$.cause"
+                    }
+                  ]
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                },
+                "NotifyFailure": {
+                  "Comment": "Write here failure notification",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "ExecutionFailed": {
+                  "Type": "Fail",
+                  "Cause": "Glue Job failed"
+                }
+              }
+            }
+          - {StateMachine2: !Ref StateMachine2,
+             StateMachine3: !Ref StateMachine3}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  StateMachine2:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      DefinitionString:
+        !Sub |
+            {
+              "Comment": "Example to execute AWS Glue Job",
+              "StartAt": "Prep",
+              "States": {
+                "Prep": {
+                  "Comment": "Write prep if you need",
+                  "Type": "Pass",
+                  "Next": "execGlueJob1"
+                },
+                "execGlueJob1": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::glue:startJobRun.sync",
+                  "Parameters": {
+                    "JobName": "job_execution1"
+                  },
+                  "Next": "Finished",
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "NotifyFailure",
+                      "ResultPath": "$.cause"
+                    }
+                  ]
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                },
+                "NotifyFailure": {
+                  "Comment": "ジョブの失敗通知を記述",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "ExecutionFailed": {
+                  "Type": "Fail",
+                  "Cause" : "$.cause"
+                }
+              }
+            }
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  StateMachine3:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      DefinitionString:
+        !Sub |
+            {
+              "Comment": "Example to execute AWS Glue Job",
+              "StartAt": "Prep",
+              "States": {
+                "Prep": {
+                  "Comment": "Write prep if you need",
+                  "Type": "Pass",
+                  "Next": "execGlueJob2"
+                },
+                "execGlueJob2": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::glue:startJobRun.sync",
+                  "Parameters": {
+                    "JobName": "job_execution2"
+                  },
+                  "Next": "Finished",
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "NotifyFailure",
+                      "ResultPath": "$.cause"
+                    }
+                  ]
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                },
+                "NotifyFailure": {
+                  "Comment": "ジョブの失敗通知を記述",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "ExecutionFailed": {
+                  "Type": "Fail",
+                  "Cause" : "$.cause"
+                }
+              }
+            }
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+Outputs:
+  StateMachine2Arn:
+    Value:
+      Ref: StateMachine2
