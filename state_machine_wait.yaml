@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "An example template with an IAM role for a sample state machine : wait."
+
+Resources:
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:DescribeStateMachine"
+                  - "states:StartExecution"
+                  - "states:DeleteStateMachine"
+                  - "states:ListExecutions"
+                  - "states:UpdateStateMachine"
+                  - "events:PutTargets"
+                  - "events:PutRule"
+                  - "events:DescribeRule"
+                  - "lambda:InvokeFunction"
+                  - "glue:StartJobRun"
+                Resource: "*"
+  StateMachineWait:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "sm-wait"
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Example of waiting",
+              "StartAt": "Wait10seconds",
+              "States": {
+                "Wait10seconds": {
+                  "Type": "Wait",
+                  "Seconds": 10,
+                  "Next": "WaitForFileArrive"
+                },
+                "WaitForFileArrive": {
+                  "Type": "Task",
+                  "Resource": "${LambdaFunctionArn}",
+                  "InputPath": "$.lambda",
+                  "ResultPath": "$.CheckResult",
+                  "Retry": [ 
+                    {
+                    "ErrorEquals": [ "States.ALL" ],
+                    "IntervalSeconds": 30,
+                    "MaxAttempts": 10
+                    }
+                  ],
+                  "Catch": [
+                    {
+                      "ErrorEquals": [ "States.ALL" ],
+                      "Next": "Timeout"
+                    }
+                  ],
+                  "Next": "Execute"
+                },
+                "Execute": {
+                  "Type": "Pass",
+                  "Next": "Finished"
+                },
+                "Timeout": {
+                  "Type": "Fail",
+                  "Cause": "File does not arrive"
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                }
+              }
+            }
+          - {LambdaFunctionArn: !GetAtt [LambdaCheckStatus, Arn ]}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub lambda.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:ListExecutions"
+                  - "lambda:InvokeFunction"
+                  - "s3:ListBucket"
+                Resource: "*"
+  LambdaCheckStatus:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: index.lambda_handler
+      FunctionName: file_check
+      Role: !GetAtt [ LambdaExecutionRole, Arn ]
+      Runtime: python3.7
+      Code:
+        ZipFile: |
+          import boto3
+
+          def lambda_handler(event, context):
+              bucket_name = event['bucket_name']
+              s3_key = event['key']
+              
+              s3_client = boto3.client('s3')
+              object_list = s3_client.list_objects(Bucket=bucket_name, Prefix=s3_key)
+              
+              if 'Contents' in object_list:
+                  return {'file_arrived': 0}
+              else:
+                  # return {'file_arrived': 1}
+                  raise

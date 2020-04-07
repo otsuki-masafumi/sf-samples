@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "An example template with an IAM role for a sample state machine : job flow."
+Parameters:
+  ExecutorStateMachineArn:
+    Type: String
+    Default: "arn:aws:states:ap-northeast-1:896540033301:stateMachine:ExecIfNotCompleted"
+
+Resources:
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+                - events.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:DescribeStateMachine"
+                  - "states:StartExecution"
+                  - "states:DeleteStateMachine"
+                  - "states:ListExecutions"
+                  - "states:UpdateStateMachine"
+                  - "events:PutTargets"
+                  - "events:PutRule"
+                  - "events:DescribeRule"
+                  - "glue:*"
+                Resource: "*"
+  StateMachineJobFlow:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "JobFlow1"
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Example of job flow by state machines",
+              "StartAt": "JobFlowStart",
+              "States": {
+                "JobFlowStart": {
+                  "Type": "Pass",
+                  "Next": "Job1"
+                },
+                "Job1": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::states:startExecution.sync",
+                  "InputPath": "$",
+                  "ResultPath": "$.JobResult",
+                  "Parameters": {
+                    "StateMachineArn": "${ExecutorArn}",
+                    "Input": {
+                      "lambda": {
+                        "sm_arn": "${Job1}",
+                        "execution_name.$": "$.JobDate"
+                      }
+                    }
+                  },
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "job1Failed",
+                      "ResultPath": "$.cause"
+                    }
+                  ],
+                  "Next": "Job2"
+                },
+                "job1Failed": {
+                  "Comment": "Write here failure notification",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "Job2": {
+                  "Type": "Parallel",
+                  "InputPath": "$",
+                  "ResultPath": "$.JobResult",
+                  "Next": "Job3",
+                  "Branches": [
+                    {
+                      "StartAt": "Job21",
+                      "States": {
+                        "Job21": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "InputPath": "$",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "lambda": {
+                                "sm_arn": "${Job21}",
+                                "execution_name.$": "$.JobDate"
+                              }
+                            }
+                          },
+                          "End": true
+                        }
+                      }
+                    },
+                    {
+                      "StartAt": "Job22",
+                      "States": {
+                        "Job22": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "InputPath": "$",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "lambda": {
+                                "sm_arn": "${Job22}",
+                                "execution_name.$": "$.JobDate"
+                              }
+                            }
+                          },
+                          "End": true
+                        }
+                      }
+                    }
+                  ],
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "job2Failed",
+                      "ResultPath": "$.cause"
+                    }
+                  ]
+                },
+                "job2Failed": {
+                  "Comment": "Write here failure notification",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "Job3": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::states:startExecution.sync",
+                  "InputPath": "$",
+                  "ResultPath": "$.JobResult",
+                  "Parameters": {
+                    "StateMachineArn": "${ExecutorArn}",
+                    "Input": {
+                      "lambda": {
+                        "sm_arn": "${Job3}",
+                        "execution_name.$": "$.JobDate"
+                      }
+                    }
+                  },
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "job3Failed",
+                      "ResultPath": "$.cause"
+                    }
+                  ],
+                  "Next": "Finished"
+                },
+                "job3Failed": {
+                  "Comment": "Write here failure notification",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                },
+                "ExecutionFailed": {
+                  "Type": "Fail",
+                  "Cause": "Job Flow failed"
+                }
+              }
+            }
+          - {ExecutorArn: !Ref ExecutorStateMachineArn,
+             Job1: !Ref StateMachineJob1,
+             Job21: !Ref StateMachineJob21,
+             Job22: !Ref StateMachineJob22,
+             Job3: !Ref StateMachineJob3}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  StateMachineJob1:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "StateMachineJob1"
+      DefinitionString:
+        !Sub |
+            {
+              "Comment": "Always success",
+              "StartAt": "Finished",
+              "States": {
+                "Finished": {
+                  "Type": "Succeed"
+                }
+              }
+            }
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  StateMachineJob21:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "StateMachineJob21"
+      DefinitionString:
+        !Sub |
+            {
+              "Comment": "Always success",
+              "StartAt": "Finished",
+              "States": {
+                "Finished": {
+                  "Type": "Succeed"
+                }
+              }
+            }
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  StateMachineJob22:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "StateMachineJob22"
+      DefinitionString:
+        !Sub |
+            {
+              "Comment": "Always fail",
+              "StartAt": "Finished",
+              "States": {
+                "Finished": {
+                  "Type": "Succeed"
+                }
+              }
+            }
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  StateMachineJob3:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "StateMachineJob3"
+      DefinitionString:
+        !Sub |
+            {
+              "Comment": "Always success",
+              "StartAt": "Finished",
+              "States": {
+                "Finished": {
+                  "Type": "Succeed"
+                }
+              }
+            }
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]

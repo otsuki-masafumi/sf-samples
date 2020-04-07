@@ -1,28 +1,15 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "An example template with an IAM role for a sample state machine : base."
+Description: "An example template with an IAM role for a sample state machine : parallel"
 Parameters:
   GlueS3Bucket:
     Type: String
     Default: aws-glue-scripts-m3d1pb
     Description: "Enter S3 bucket name for Glue scripts"
-  GlueJobName1:
+  GlueJobName:
     Type: String
-    Default: sm-base-gluejob1
-  GlueJobName2:
-    Type: String
-    Default: sm-base-gluejob2
+    Default: sm-parallel2-gluejob
 
 Resources:
-  ScheduleStateMachineExecution:
-    Type: AWS::Events::Rule
-    Properties:
-        Description: Schedule execution for state machine 1
-        ScheduleExpression: 'cron(0 7 * * ? *)'
-        State: ENABLED
-        Targets:
-          - RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
-            Arn: !Ref StateMachine1
-            Id: "ScheduleRule_for_StateMachine1"
   StatesExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -52,11 +39,13 @@ Resources:
                   - "events:PutRule"
                   - "events:DescribeRule"
                   - "glue:*"
+                  - "lambda:InvokeFunction"
+                  - "s3:ListAllMyBuckets"
                 Resource: "*"
-  StateMachine1:
+  StateMachineParent:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
-      StateMachineName: sm-base-1
+      StateMachineName: sm-parallel2-Parent
       DefinitionString:
         !Sub
           - |-
@@ -65,15 +54,33 @@ Resources:
               "StartAt": "Preprocessing",
               "States": {
                 "Preprocessing": {
-                  "Comment": "Write prep if you need",
-                  "Type": "Pass",
-                  "Next": "ExecuteGlueJobs"
-                },
-                "ExecuteGlueJobs": {
                   "Type": "Task",
-                  "Resource": "arn:aws:states:::states:startExecution.sync",
-                  "Parameters": {
-                    "StateMachineArn": "${StateMachine2}"
+                  "Resource": "${LambdaFunctionArn}",
+                  "ResultPath": "$.BucketList",
+                  "Next": "ExecuteParallelJobs"
+                },
+                "ExecuteParallelJobs": {
+                  "Type": "Map",
+                  "InputPath": "$.BucketList",
+                  "MaxConcurrency": 5,
+                  "Next": "Finished",
+                  "Iterator":
+                    {
+                      "StartAt": "job",
+                      "States": {
+                        "job": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "InputPath": "$",
+                          "Parameters": {
+                            "StateMachineArn": "${StateMachine1}",
+                            "Input": {
+                              "BucketName.$": "$"
+                            }
+                          },
+                          "End": true
+                        }
+                      }
                   },
                   "Catch": [
                     {
@@ -81,8 +88,7 @@ Resources:
                       "Next": "NotifyFailure",
                       "ResultPath": "$.cause"
                     }
-                  ],
-                  "Next": "Finished"
+                  ]
                 },
                 "Finished": {
                   "Type": "Succeed"
@@ -98,12 +104,13 @@ Resources:
                 }
               }
             }
-          - {StateMachine2: !Ref StateMachine2}
+          - {StateMachine1: !Ref StateMachineChild,
+            LambdaFunctionArn: !GetAtt [LambdaListBucket, Arn]}
       RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
-  StateMachine2:
+  StateMachineChild:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
-      StateMachineName: sm-base-2
+      StateMachineName: sm-parallel2-job
       DefinitionString:
         !Sub 
           - |-
@@ -114,28 +121,16 @@ Resources:
                 "Prep": {
                   "Comment": "Write prep if you need",
                   "Type": "Pass",
-                  "Next": "execGlueJob1"
+                  "Next": "ExecuteGlueJob"
                 },
-                "execGlueJob1": {
+                "ExecuteGlueJob": {
                   "Type": "Task",
                   "Resource": "arn:aws:states:::glue:startJobRun.sync",
                   "Parameters": {
-                    "JobName": "${job1}"
-                  },
-                  "Next": "execGlueJob2",
-                  "Catch": [
-                    {
-                      "ErrorEquals": ["States.TaskFailed"],
-                      "Next": "NotifyFailure",
-                      "ResultPath": "$.cause"
+                    "JobName": "${GlueJobName}",
+                    "Arguments": {
+                      "--bucket_name.$": "$.BucketName"
                     }
-                  ]
-                },
-                "execGlueJob2": {
-                  "Type": "Task",
-                  "Resource": "arn:aws:states:::glue:startJobRun.sync",
-                  "Parameters": {
-                    "JobName": "${job2}"
                   },
                   "Next": "Finished",
                   "Catch": [
@@ -160,8 +155,7 @@ Resources:
                 }
               }
             }
-          - {"job1": !Ref GlueJobName1,
-             "job2": !Ref GlueJobName2}
+          - {GlueJobName: !Ref GlueJobName}
       RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
   GlueJobRole:
     Type: AWS::IAM::Role
@@ -252,34 +246,54 @@ Resources:
         Name: pythonshell
         PythonVersion: 3
         ScriptLocation: 
-          !Join [ '', ['s3://', !Ref GlueS3Bucket, '/scripts/glue_job1.py']]
+          !Join [ '', ['s3://', !Ref GlueS3Bucket, '/scripts/glue_job4.py']]
       DefaultArguments:
         "--job-bookmark-option": "job-bookmark-disable"
       ExecutionProperty:
-        MaxConcurrentRuns: 2
+        MaxConcurrentRuns: 8
       GlueVersion: 1.0
       MaxRetries: 0
       MaxCapacity: 0.0625
-      Name: !Ref GlueJobName1
+      Name: !Ref GlueJobName
       Role: !Ref GlueJobRole
-  GlueJob2:
-    Type: AWS::Glue::Job
+
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
     Properties:
-      Command:
-        Name: pythonshell
-        PythonVersion: 3
-        ScriptLocation: 
-          !Join [ '', ['s3://', !Ref GlueS3Bucket, '/scripts/glue_job2.py']]
-      DefaultArguments:
-        "--job-bookmark-option": "job-bookmark-disable"
-      ExecutionProperty:
-        MaxConcurrentRuns: 2
-      GlueVersion: 1.0
-      MaxRetries: 0
-      MaxCapacity: 0.0625
-      Name: !Ref GlueJobName2
-      Role: !Ref GlueJobRole
-Outputs:
-  StateMachine2Arn:
-    Value:
-      Ref: StateMachine2
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub lambda.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                  - "s3:ListAllMyBuckets"
+                Resource: "*"
+  LambdaListBucket:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: index.list_bucket
+      FunctionName: list_bucket
+      Role: !GetAtt [ LambdaExecutionRole, Arn ]
+      Runtime: python3.7
+      Code:
+        ZipFile: |
+          import boto3
+
+          def list_bucket(event, context):
+            s3_client = boto3.client('s3')
+
+            list_buckets_response = s3_client.list_buckets()
+            buckets = [x['Name'] for x in list_buckets_response['Buckets']]
+
+            return buckets
