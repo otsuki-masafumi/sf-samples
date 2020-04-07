@@ -3,7 +3,7 @@ Description: "An example template with an IAM role for a sample state machine : 
 Parameters:
   ExecutorStateMachineArn:
     Type: String
-    Default: "arn:aws:states:ap-northeast-1::stateMachine:ExecIfNotCompleted"
+    Default: "arn:aws:states:ap-northeast-1:896540033301:stateMachine:ExecIfNotCompleted"
 
 Resources:
   StatesExecutionRole:
