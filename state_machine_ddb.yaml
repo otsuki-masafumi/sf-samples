@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "An example template for dynamoDB I/O"
+
+Resources:
+  ScheduleStateMachineExecution:
+    Type: AWS::Events::Rule
+    Properties:
+        Description: Schedule execution for state machine 1
+        ScheduleExpression: 'cron(0 7 * * ? *)'
+        State: ENABLED
+        Targets:
+          - RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+            Arn: !Ref StateMachineParent
+            Id: "ScheduleRule_for_StateMachine1"
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+                - events.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:DescribeStateMachine"
+                  - "states:StartExecution"
+                  - "states:DeleteStateMachine"
+                  - "states:ListExecutions"
+                  - "states:UpdateStateMachine"
+                  - "events:PutTargets"
+                  - "events:PutRule"
+                  - "events:DescribeRule"
+                  - "glue:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "dynamodb:GetItem"
+                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/JobDate"
+              - Effect: Allow
+                Action:
+                  - "dynamodb:PutItem"
+                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/JobResult"
+  StateMachineParent:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: sm-dynamodb-p
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Example to invoke AWS Glue Job",
+              "StartAt": "GetItem",
+              "States": {
+                "GetItem": {
+                  "Comment": "Get JobDate from DynamoDB",
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::dynamodb:getItem",
+                  "Parameters": {
+                    "TableName": "JobDate",
+                    "Key": {
+                      "Index": {"N": "1"}
+                    }
+                  },
+                  "ResultPath": "$.GetItemResult",
+                  "Next": "ExecuteGlueJobs"
+                },
+                "ExecuteGlueJobs": {
+                  "Type": "Task",
+                  "InputPath": "$.GetItemResult.Item",
+                  "Resource": "arn:aws:states:::states:startExecution.sync",
+                  "Parameters": {
+                    "StateMachineArn": "${StateMachineChild}",
+                    "Input": {
+                      "JobDate.$": "$.JobDate.S"
+                    }
+                  },
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "NotifyFailure",
+                      "ResultPath": "$.cause"
+                    }
+                  ],
+                  "Next": "Finished"
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                },
+                "NotifyFailure": {
+                  "Comment": "Write here failure notification",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "ExecutionFailed": {
+                  "Type": "Fail",
+                  "Cause": "Glue Job failed"
+                }
+              }
+            }
+          - {StateMachineChild: !Ref StateMachineChild}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  StateMachineChild:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: sm-dynamodb-c
+      DefinitionString:
+        !Sub |
+          {
+            "Comment": "Example to execute AWS Glue Job",
+            "StartAt": "Prep",
+            "States": {
+              "Prep": {
+                "Comment": "Write prep if you need",
+                "Type": "Pass",
+                "Next": "execGlueJob"
+              },
+              "execGlueJob": {
+                "Type": "Pass",
+                "Next": "PutItem"
+              },
+              "PutItem": {
+                "Comment": "Put Job result to DynamoDB",
+                "Type": "Task",
+                "Resource": "arn:aws:states:::dynamodb:putItem",
+                "Parameters": {
+                  "TableName": "JobResult",
+                  "Item": {
+                    "JobId": {"S": "Job1"},
+                    "Timestamp": {"S": "2020-04-10-01:01:01"},
+                    "Result": {"S": "Succeed"}
+                  }
+                },
+                "Next": "Finished"
+              },
+              "Finished": {
+                "Type": "Succeed"
+              }
+            }
+          }
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  DDBJobDate:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: JobDate
+      KeySchema:
+        - AttributeName: Index
+          KeyType: HASH
+      AttributeDefinitions:
+        -
+          AttributeName: Index
+          AttributeType: N
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  DDBJobResult:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: JobResult
+      KeySchema:
+        - AttributeName: JobId
+          KeyType: HASH
+        - AttributeName: Timestamp
+          KeyType: RANGE
+      AttributeDefinitions:
+        -
+          AttributeName: JobId
+          AttributeType: S
+        -
+          AttributeName: Timestamp
+          AttributeType: S
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
