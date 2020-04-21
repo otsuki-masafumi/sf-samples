@@ -1,0 +1,282 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "An example template for dynamoDB I/O"
+Parameters:
+  GlueS3Bucket:
+    Type: String
+    Default: aws-glue-scripts-m3d1pb
+    Description: "Enter S3 bucket name for Glue scripts"
+  GlueJobName1:
+    Type: String
+    Default: sm-pyspark-sql
+Resources:
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+                - events.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:DescribeStateMachine"
+                  - "states:StartExecution"
+                  - "states:DeleteStateMachine"
+                  - "states:ListExecutions"
+                  - "states:UpdateStateMachine"
+                  - "events:PutTargets"
+                  - "events:PutRule"
+                  - "events:DescribeRule"
+                  - "glue:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "dynamodb:GetItem"
+                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/SqlDefinition"
+  StateMachineParent:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: sm-pyspark-p
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Example to invoke AWS Glue Job",
+              "StartAt": "GetItem",
+              "States": {
+                "GetItem": {
+                  "Comment": "Get JobDate from DynamoDB",
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::dynamodb:getItem",
+                  "Parameters": {
+                    "TableName": "SqlDefinition",
+                    "Key": {
+                      "Index": {"N": "1"}
+                    }
+                  },
+                  "ResultPath": "$.GetItemResult",
+                  "Next": "ExecuteGlueJobs"
+                },
+                "ExecuteGlueJobs": {
+                  "Type": "Task",
+                  "InputPath": "$.GetItemResult.Item",
+                  "Resource": "arn:aws:states:::states:startExecution.sync",
+                  "Parameters": {
+                    "StateMachineArn": "${StateMachineChild}",
+                    "Input": {
+                      "GlueDatabase.$": "$.glue_db.S",
+                      "SqlString.$": "$.sql_string.S",
+                      "OutPath.$": "$.out_path.S"
+                    }
+                  },
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "NotifyFailure",
+                      "ResultPath": "$.cause"
+                    }
+                  ],
+                  "Next": "Finished"
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                },
+                "NotifyFailure": {
+                  "Comment": "Write here failure notification",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "ExecutionFailed": {
+                  "Type": "Fail",
+                  "Cause": "Glue Job failed"
+                }
+              }
+            }
+          - {StateMachineChild: !Ref StateMachineChild}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  StateMachineChild:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: sm-pyspark-c
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Example to execute AWS Glue Spark Job based on given parameter",
+              "StartAt": "Prep",
+              "States": {
+                "Prep": {
+                  "Comment": "Write prep if you need",
+                  "Type": "Pass",
+                  "Next": "execGlueJob"
+                },
+                "execGlueJob": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::glue:startJobRun.sync",
+                  "Parameters": {
+                    "JobName": "${GlueJobName}",
+                    "Arguments": {
+                      "--glue_db.$": "$.GlueDatabase",
+                      "--sql_string.$": "$.SqlString",
+                      "--out_path.$": "$.OutPath"
+                    }
+                  },
+                  "Next": "Finished",
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "NotifyFailure",
+                      "ResultPath": "$.cause"
+                    }
+                  ]
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                },
+                "NotifyFailure": {
+                  "Comment": "ジョブの失敗通知を記述",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "ExecutionFailed": {
+                  "Type": "Fail",
+                  "Cause" : "$.cause"
+                }
+              }
+            }
+          - {GlueJobName: !Ref GlueSparkJob}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+  DDBSqlDefinition:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SqlDefinition
+      KeySchema:
+        - AttributeName: Index
+          KeyType: HASH
+      AttributeDefinitions:
+        -
+          AttributeName: Index
+          AttributeType: N
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "GlueJobExecutionPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "glue:*"
+                  - "s3:GetBucketLocation"
+                  - "s3:ListBucket"
+                  - "s3:ListAllMyBuckets"
+                  - "s3:GetBucketAcl"
+                  - "ec2:DescribeVpcEndpoints"
+                  - "ec2:DescribeRouteTables"
+                  - "ec2:CreateNetworkInterface"
+                  - "ec2:DeleteNetworkInterface"
+                  - "ec2:DescribeNetworkInterfaces"
+                  - "ec2:DescribeSecurityGroups"
+                  - "ec2:DescribeSubnets"
+                  - "ec2:DescribeVpcAttribute"
+                  - "iam:ListRolePolicies"
+                  - "iam:GetRole"
+                  - "iam:GetRolePolicy"
+                  - "cloudwatch:PutMetricData"
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:CreateBucket"
+                Resource: "arn:aws:s3:::aws-glue-*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:CreateBucket"
+                Resource: "arn:aws:s3:::aws-glue-*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                Resource:
+                  - "arn:aws:s3:::aws-glue-*/*"
+                  - "arn:aws:s3:::*/*aws-glue-*/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                Resource:
+                  - "arn:aws:s3:::crawler-public*"
+                  - "arn:aws:s3:::aws-glue-*"
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "logs:AssociateKmsKey"
+                Resource:
+                  - "arn:aws:logs:*:*:/aws-glue/*"
+              - Effect: "Allow"
+                Action:
+                  - "ec2:CreateTags"
+                  - "ec2:DeleteTags"
+                Condition:
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - "aws-glue-service-resource"
+                Resource:
+                  - "arn:aws:ec2:*:*:network-interface/*"
+                  - "arn:aws:ec2:*:*:security-group/*"
+                  - "arn:aws:ec2:*:*:instance/*"
+        -
+          PolicyName: "AllowPublicDataAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                Resource:
+                  - "arn:aws:s3:::amazon-reviews-pds/*"
+  GlueSparkJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Join [ '', ['s3://', !Ref GlueS3Bucket, '/scripts/glue_job_pyspark.py']]
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-glue-datacatalog": ""
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxCapacity: 4
+      MaxRetries: 0
+      Name: !Ref GlueJobName1
+      Role: !Ref GlueJobRole
