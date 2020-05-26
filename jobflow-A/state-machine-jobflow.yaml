@@ -1,0 +1,288 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "An example template with an IAM role for a sample state machine : job flow-A."
+Parameters:
+  S3bucket:
+    Description: S3 bucket which contains scripts
+    Type: String
+Resources:
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+                - events.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:DescribeStateMachine"
+                  - "states:StartExecution"
+                  - "states:DeleteStateMachine"
+                  - "states:ListExecutions"
+                  - "states:UpdateStateMachine"
+                  - "events:PutTargets"
+                  - "events:PutRule"
+                  - "events:DescribeRule"
+                  - "lambda:InvokeFunction"
+                  - "glue:*"
+                Resource: "*"
+  StateMachineJobFlow:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "JobFlow"
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Prototype of job flow A",
+              "StartAt": "JobFlowStart",
+              "States": {
+                "JobFlowStart": {
+                  "Type": "Pass",
+                  "Next": "ReadJobDefinition"
+                },
+                "ReadJobDefinition": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:lambda:::function:job_def_reader",
+                  "Parameters": {
+                    "bucket-name": "${S3bucket}",
+                    "target-key": "scripts/job-definition-job-id-100.json"
+                  },
+                  "ResultPath": "$.JobDefinition",
+                  "Next": "ArrivalCheck"
+                },
+                "ArrivalCheck": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::states:startExecution.sync",
+                  "InputPath": "$.JobDefinition.body.ArrivalCheck",
+                  "ResultPath": "$.ArrivalCheck",
+                  "Parameters": {
+                    "StateMachineArn.$": "$.waiter-sm-arn",
+                    "Input": {
+                      "bucket-name.$": "$.bucket-name",
+                      "input-file-path.$": "$.input-file-path"
+                    }
+                  },
+                  "Next": "CallJobsBParallel"
+                },
+                "CallJobsBParallel": {
+                  "Type": "Parallel",
+                  "ResultPath": null,
+                  "Branches": [
+                    { "StartAt": "CallJobB1-2",
+                      "States": {
+                        "CallJobB1-2": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB1-2",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "End": true
+                        }
+                      }
+                    },
+                    { "StartAt": "CallJobB2-2",
+                      "States": {
+                        "CallJobB2-2": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB2-2",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "End": true
+                        }
+                      }
+                    },
+                    { "StartAt": "CallJobB3-2",
+                      "States": {
+                        "CallJobB3-2": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB3-2",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "End": true
+                        }
+                      }
+                    },
+                    { "StartAt": "CallJobB4-2",
+                      "States": {
+                        "CallJobB4-2": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB4-2",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "Next": "CallJobB9"
+                        },
+                        "CallJobB9": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB9",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "End": true
+                        }
+                      }
+                    },
+                    { "StartAt": "CallJobB5-3",
+                      "States": {
+                        "CallJobB5-3": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB5-3",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "End": true
+                        }
+                      }
+                    },
+                    { "StartAt": "CallJobB6-1",
+                      "States": {
+                        "CallJobB6-1": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB6-1",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "Next": "CallJobB6-2"
+                        },
+                        "CallJobB6-2": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB6-2",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "Next": "CallJobB6-3"
+                        },
+                        "CallJobB6-3": {
+                          "Type": "Task",
+                          "InputPath": "$.JobDefinition.body.JobB6-3",
+                          "ResultPath": null,
+                          "Resource": "arn:aws:states:::states:startExecution.sync",
+                          "Parameters": {
+                            "StateMachineArn": "${ExecutorArn}",
+                            "Input": {
+                              "sm_arn.$": "$.sm-parts-arn",
+                              "execution_name.$": "$.execution-name",
+                              "job-params.$": "$.job-params"
+                            }
+                          },
+                          "End": true
+                        }
+                      }
+                    }
+                  ],
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "CallJobBParallelFailure",
+                      "ResultPath": "$.cause"
+                    }
+                  ],
+                  "Next": "CallJobB11"
+                },
+                "CallJobBParallelFailure": {
+                  "Comment": "Write here failure notification",
+                  "Type": "Fail"
+                },
+                "CallJobB11": {
+                  "Type": "Task",
+                  "InputPath": "$.JobDefinition.body.JobB11",
+                  "ResultPath": null,
+                  "Resource": "arn:aws:states:::states:startExecution.sync",
+                  "Parameters": {
+                    "StateMachineArn": "${ExecutorArn}",
+                    "Input": {
+                      "sm_arn.$": "$.sm-parts-arn",
+                      "execution_name.$": "$.execution-name",
+                      "job-params.$": "$.job-params"
+                    }
+                  },
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "CallJobB11Failure",
+                      "ResultPath": "$.cause"
+                    }
+                  ],
+                  "Next": "Finish"
+                },
+                "CallJobB11Failure": {
+                  "Comment": "Write here failure notification",
+                  "Type": "Fail"
+                },
+                "Finish": {
+                  "Type": "Succeed"
+                }
+              }
+            }
+          - {S3bucket: !Ref S3bucket,
+             ExecutorArn: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:jobflow-A-executor"}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]

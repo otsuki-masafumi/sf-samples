@@ -1,0 +1,112 @@
+{
+  "JobId": 100,
+  "JobPrefix": "Job100",
+  "JobDateTable": "JobDate",
+  "JobDateIndex": "0",
+  "replace_pseudo_parameters_in_arn": "true",
+  "ArrivalCheck": {
+    "bucket-name": "aws-glue-data-m3d1pb",
+    "input-file-path": "awsglue-datasets/Medicare_Hospital_Provider.csv",
+    "waiter-sm-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:WaitFileArrival30min"
+  },
+  "JobB1-2": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b1-2",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b1-2"
+    }
+  },
+  "JobB2-2": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b2-2",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b2-2"
+    }
+  },
+  "JobB3-2": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b3-2",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b3-2"
+    }
+  },
+  "JobB4-2": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b4-2",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b4-2"
+    }
+  },
+  "JobB5-3": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b5-3",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b5-3"
+    }
+  },
+  "JobB6-1": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b6-1",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b6-1"
+    }
+  },
+  "JobB6-2": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b6-2",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b6-2"
+    }
+  },
+  "JobB6-3": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b6-3",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b6-3"
+    }
+  },
+  "JobB9": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b9",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b9"
+    }
+  },
+  "JobB11": {
+    "sm-parts-arn": "arn:aws:states:{AWS:Region}:{AWS:AccountId}:stateMachine:execSingleJob",
+    "execution-name": "",
+    "job-params": {
+      "glue_job_name": "job-b11",
+      "glue_db": "nycitytaxi",
+      "sql_string": "select count(*) from nycitytaxi.nyctaxi_parquet",
+      "out_path": "s3://aws-glue-data-m3d1pb/data/nyctaxi_count/job-b11"
+    }
+  }
+}

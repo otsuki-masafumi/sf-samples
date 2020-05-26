@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "An example template with an IAM role for a sample state machine : job flow."
+Parameters:
+  S3bucket:
+    Description: S3 bucket which contains scripts
+    Type: String
+  S3bucketData:
+    Description: S3 bucket which contains data objects
+    Type: String
+Resources:
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub lambda.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:ListExecutions"
+                  - "lambda:InvokeFunction"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "s3:ListObjects"
+                  - "s3:GetObject"
+                  - "s3:List*"
+                Resource:
+                  - !Sub "arn:aws:s3:::${S3bucket}"
+                  - !Sub "arn:aws:s3:::${S3bucket}/*"
+                  - !Sub "arn:aws:s3:::${S3bucketData}"
+                  - !Sub "arn:aws:s3:::${S3bucketData}/*"
+              - Effect: Allow
+                Action:
+                  - "dynamodb:GetItem"
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/JobDate"
+  JobDefReader:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: index.lambda_handler
+      FunctionName: job_def_reader
+      Role: !GetAtt [ LambdaExecutionRole, Arn ]
+      Runtime: python3.7
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import boto3
+          import ast
+
+          JOBPREFIX_KEY = 'JobPrefix'
+          DDB_ITEM_KEY = 'Item'
+          ACCOUNT_ID_KEY = 'Account'
+          REPLACE_ARN_KEY = 'replace_pseudo_parameters_in_arn'
+
+          def get_account_id():
+            response = boto3.client('sts').get_caller_identity()
+            if ACCOUNT_ID_KEY in response:
+                return response[ACCOUNT_ID_KEY]
+            else:
+                print('Failed to get account id')
+                raise
+
+          # Replace pseudo parameter (e.g. {AWS:AccountId}) in job definition
+          # TODO: Current target is str in dict. NOT work for list object
+          def replace_aws_keyword(target_dict, target_word, replace_word):
+              for k, v in target_dict.items():
+                  if isinstance(v, str) and target_word in v:
+                      target_dict[k] = v.replace(target_word, replace_word)
+                  if isinstance(v, dict):
+                      target_dict[k] = replace_aws_keyword(v, target_word, replace_word)
+
+              return target_dict
+
+          def get_jobdate(job_date_table, index):
+            ddb = boto3.client('dynamodb')
+            result = ddb.get_item(TableName=job_date_table, Key={'index': {'N': index}})
+
+            if DDB_ITEM_KEY not in result:
+                print('Job Date get error')
+                raise
+            else:
+                job_date = result[DDB_ITEM_KEY]['JobDate']['S']
+
+            return job_date
+
+          def lambda_handler(event, context):
+            bucket_name = event['bucket-name']
+            s3_key = event['target-key']
+
+            # Read job definition
+            s3 = boto3.resource('s3')
+            response = s3.Object(bucket_name, s3_key).get()
+            if 'Body' in response:
+                body = response['Body'].read().decode('utf-8')
+                job_definition = ast.literal_eval(body)
+            else:
+                print('Read job definition failed')
+                raise
+
+            # Set job date table and index from job definition
+            if 'JobDateTable' in job_definition and 'JobDateIndex' in job_definition:
+                job_date_table = job_definition['JobDateTable']
+                job_date_index = job_definition['JobDateIndex']
+                job_date = get_jobdate(job_date_table, job_date_index)
+            else:
+                print('No job date table info in job definition')
+                raise
+
+            # Set execution name based on prefix and job date
+            if JOBPREFIX_KEY in job_definition:
+                job_prefix = job_definition[JOBPREFIX_KEY]
+
+                for key, value in job_definition.items():
+                    if isinstance(value, dict) and 'execution-name' in value:
+                        value['execution-name'] = '{}-{}-{}'.format(job_prefix, job_date, key)
+
+            # Replace '{AWS:Region}' and '{AWS:AccountId}' in job definition
+            if REPLACE_ARN_KEY in job_definition and job_definition[REPLACE_ARN_KEY] == 'true':
+                current_account_id = get_account_id()
+                current_region = boto3.session.Session().region_name
+                job_definition = replace_aws_keyword(job_definition, '{AWS:Region}',current_region)
+                job_definition = replace_aws_keyword(job_definition, '{AWS:AccountId}', current_account_id)
+
+            return {'status_code': 200, 'body': job_definition}
+
+  FileArrivalCheck:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: index.lambda_handler
+      FunctionName: file_arrival_check
+      Role: !GetAtt [ LambdaExecutionRole, Arn ]
+      Runtime: python3.7
+      Code:
+        ZipFile: |
+          import boto3
+
+          def lambda_handler(event, context):
+              bucket_name = event['bucket-name']
+              s3_key = event['input-file-path']
+
+              s3_client = boto3.client('s3')
+              object_list = s3_client.list_objects(Bucket=bucket_name, Prefix=s3_key)
+
+              if 'Contents' in object_list:
+                  return {'file_arrived': 0}
+              else:
+                  raise

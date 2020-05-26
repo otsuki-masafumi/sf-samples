@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Master Template For Jobflow-A prototype
+
+Parameters:
+  S3bucket:
+    Type: String
+    Default: aws-glue-scripts-m3d1pb
+    Description: "Enter S3 bucket name for job definition"
+  S3bucketData:
+    Type: String
+    Default: aws-glue-data-m3d1pb
+    Description: "Enter S3 bucket name for data objects"
+
+Resources:
+  LambdaFunctions:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${S3bucket}.s3.amazonaws.com/scripts/lambda-functions.yaml
+      Parameters:
+        S3bucket:
+          Ref: S3bucket
+        S3bucketData:
+          Ref: S3bucketData
+  SMexecutor:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - LambdaFunctions
+    Properties:
+      TemplateURL: !Sub https://${S3bucket}.s3.amazonaws.com/scripts/state-machine-executor.yaml
+  SMparts:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - LambdaFunctions
+    Properties:
+      TemplateURL: !Sub https://${S3bucket}.s3.amazonaws.com/scripts/state-machine-parts.yaml
+  SMjobflow:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - LambdaFunctions
+      - SMexecutor
+      - SMparts
+    Properties:
+      TemplateURL: !Sub https://${S3bucket}.s3.amazonaws.com/scripts/state-machine-jobflow.yaml
+      Parameters:
+        S3bucket:
+          Ref: S3bucket
+  GlueJob:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${S3bucket}.s3.amazonaws.com/scripts/glue-jobs.yaml
+      Parameters:
+        S3bucket:
+          Ref: S3bucket

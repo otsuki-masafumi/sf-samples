@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Job flow parts"
+
+Resources:
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:DescribeStateMachine"
+                  - "states:StartExecution"
+                  - "states:DeleteStateMachine"
+                  - "states:ListExecutions"
+                  - "states:UpdateStateMachine"
+                  - "events:PutTargets"
+                  - "events:PutRule"
+                  - "events:DescribeRule"
+                  - "lambda:InvokeFunction"
+                  - "glue:*"
+                Resource: "*"
+
+  CheckFIleArrival:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "WaitFileArrival30min"
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "File arrival check",
+              "StartAt": "WaitForFileArrive",
+              "States": {
+                "WaitForFileArrive": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:lambda:::function:file_arrival_check",
+                  "InputPath": "$",
+                  "ResultPath": "$.CheckResult",
+                  "Parameters": {
+                    "bucket-name.$": "$.bucket-name",
+                    "input-file-path.$": "$.input-file-path"
+                  },
+                  "Retry": [
+                    {
+                    "ErrorEquals": [ "States.ALL" ],
+                    "IntervalSeconds": 60,
+                    "MaxAttempts": 30
+                    }
+                  ],
+                  "Catch": [
+                    {
+                      "ErrorEquals": [ "States.ALL" ],
+                      "Next": "Timeout"
+                    }
+                  ],
+                  "Next": "Arrived"
+                },
+                "Timeout": {
+                  "Type": "Fail",
+                  "Cause": "File does not arrive"
+                },
+                "Arrived": {
+                  "Type": "Succeed"
+                }
+              }
+            }
+          - {DummyParam: 'DummyParam'}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+
+  execSingleJob:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineName: "execSingleJob"
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Execute single AWS Glue Job passed by parameter",
+              "StartAt": "execSpecifiedGlueJob",
+              "States": {
+                "execSpecifiedGlueJob": {
+                  "Type": "Task",
+                  "InputPath": "$.job-params",
+                  "Resource": "arn:aws:states:::glue:startJobRun.sync",
+                  "Parameters": {
+                    "JobName.$": "$.glue_job_name",
+                    "Arguments": {
+                      "--glue_db.$": "$.glue_db",
+                      "--sql_string.$": "$.sql_string",
+                      "--out_path.$": "$.out_path"
+                    }
+                  },
+                  "Next": "Finished",
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.TaskFailed"],
+                      "Next": "NotifyFailure",
+                      "ResultPath": "$.cause"
+                    }
+                  ]
+                },
+                "Finished": {
+                  "Type": "Succeed"
+                },
+                "NotifyFailure": {
+                  "Comment": "Write here execution failure notification",
+                  "Type": "Pass",
+                  "Next": "ExecutionFailed"
+                },
+                "ExecutionFailed": {
+                  "Type": "Fail",
+                  "Cause" : "$.cause"
+                }
+              }
+            }
+          - {DummyParam: 'DummyParam'}
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]

@@ -1,0 +1,257 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "An example template with an IAM role for a sample state machine : parallel"
+Parameters:
+  S3bucket:
+    Type: String
+    Description: "Enter S3 bucket name for Glue scripts"
+
+Resources:
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "GlueJobExecutionPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "glue:*"
+                  - "s3:GetBucketLocation"
+                  - "s3:ListBucket"
+                  - "s3:ListAllMyBuckets"
+                  - "s3:GetBucketAcl"
+                  - "ec2:DescribeVpcEndpoints"
+                  - "ec2:DescribeRouteTables"
+                  - "ec2:CreateNetworkInterface"
+                  - "ec2:DeleteNetworkInterface"
+                  - "ec2:DescribeNetworkInterfaces"
+                  - "ec2:DescribeSecurityGroups"
+                  - "ec2:DescribeSubnets"
+                  - "ec2:DescribeVpcAttribute"
+                  - "iam:ListRolePolicies"
+                  - "iam:GetRole"
+                  - "iam:GetRolePolicy"
+                  - "cloudwatch:PutMetricData"                
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "logs:AssociateKmsKey"                
+                Resource: 
+                  - "arn:aws:logs:*:*:/aws-glue/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:*"
+                Resource:
+                  - "arn:aws:s3:::aws-glue-*"
+                  - "arn:aws:s3:::aws-glue-*/*"
+                  - "arn:aws:s3:::crawler-public*"
+                  - "arn:aws:s3:::tuki-test-bkt"
+                  - "arn:aws:s3:::tuki-test-bkt/*"
+              - Effect: "Allow"
+                Action:
+                  - "ec2:CreateTags"
+                  - "ec2:DeleteTags"
+                Condition:
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - "aws-glue-service-resource"
+                Resource: 
+                  - "arn:aws:ec2:*:*:network-interface/*"
+                  - "arn:aws:ec2:*:*:security-group/*"
+                  - "arn:aws:ec2:*:*:instance/*"
+  GlueJob1:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b1-2"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b1-2.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob2:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b2-2"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b2-2.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob3:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b3-2"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b3-2.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob4:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b4-2"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b4-2.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob5:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b5-3"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b5-3.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob61:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b6-1"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b6-1.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob62:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b6-2"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b6-2.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob63:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b6-3"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b6-3.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob9:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b9"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b9.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
+  GlueJob11:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "job-b11"
+      Command:
+        Name: glueetl
+        ScriptLocation:
+          !Sub "s3://${S3bucket}/scripts/glue-job-b11.py"
+      DefaultArguments:
+        "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ''
+        "--enable-glue-datacatalog": ""
+      MaxCapacity: 4
+      ExecutionProperty:
+        MaxConcurrentRuns: 2
+      GlueVersion: 1.0
+      MaxRetries: 0
+      Role: !Ref GlueJobRole
