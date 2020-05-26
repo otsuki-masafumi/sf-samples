@@ -4,11 +4,9 @@ Description: Master Template For Jobflow-A prototype
 Parameters:
   S3bucket:
     Type: String
-    Default: aws-glue-scripts-m3d1pb
     Description: "Enter S3 bucket name for job definition"
   S3bucketData:
     Type: String
-    Default: aws-glue-data-m3d1pb
     Description: "Enter S3 bucket name for data objects"
 
 Resources:
