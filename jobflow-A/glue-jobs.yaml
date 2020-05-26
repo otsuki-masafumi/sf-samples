@@ -61,8 +61,6 @@ Resources:
                   - "arn:aws:s3:::aws-glue-*"
                   - "arn:aws:s3:::aws-glue-*/*"
                   - "arn:aws:s3:::crawler-public*"
-                  - "arn:aws:s3:::tuki-test-bkt"
-                  - "arn:aws:s3:::tuki-test-bkt/*"
               - Effect: "Allow"
                 Action:
                   - "ec2:CreateTags"
